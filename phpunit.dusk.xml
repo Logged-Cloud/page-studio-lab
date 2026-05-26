@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         processIsolation="false"
+         stopOnFailure="false">
+    <testsuites>
+        <testsuite name="Browser">
+            <directory>tests/Browser</directory>
+        </testsuite>
+    </testsuites>
+    <php>
+        <env name="APP_ENV" value="local"/>
+        <env name="DUSK_DRIVER_URL" value="http://page-studio-selenium:4444"/>
+        <env name="APP_URL" value="http://page-studio-lab:8000"/>
+    </php>
+</phpunit>

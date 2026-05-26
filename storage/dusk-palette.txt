@@ -1,0 +1,23 @@
+BEFORE: 0
+addNode('source.route_variable') :: ◇
+                                Route variable
+addNode('source.constant') :: ▣
+                                Constant
+addNode('source.model_finder') :: 🔍
+                                Model finder
+addNode('transform.uppercase') :: A
+                                Uppercase
+addNode('transform.lowercase') :: a
+                                Lowercase
+addNode('transform.concat') :: +
+                                Concatenate
+addNode('transform.default') :: ∅
+                                Default when empty
+addNode('transform.field') :: .
+                                Read field
+addNode('transform.slugify') :: -
+                                Slugify
+addNode('transform.format_date') :: 🗓
+                                Format date
+addNode('output') :: ▶
+                                Output variable

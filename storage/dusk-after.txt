@@ -1,0 +1,7 @@
+AFTER click: 1
+AFTER call:  2
+WIRE NODES: [{"id":"n_eb2d669e","type":"source.route_variable","position":{"x":100,"y":80},"settings":{"variable_name":""}},{"id":"n_e0b6d0fe","type":"source.route_variable","position":{"x":100,"y":80},"settings":{"variable_name":""}}]
+BUTTON: {"wireClick":"addNode('source.route_variable')","attrs":["type","class","draggable","wire:click","@dragstart","title"]}
+PROBE: {"lw":"object"}
+===RESPONSES===
+
