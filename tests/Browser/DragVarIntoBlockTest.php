@@ -170,6 +170,178 @@ class DragVarIntoBlockTest extends DuskTestCase
         });
     }
 
+    public function test_var_drop_on_list_item_lands_in_the_correct_line(): void
+    {
+        $this->browse(function (Browser $b) {
+            $this->fresh($b);
+            $b->script(<<<'JS'
+                Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id')).set('blocks', [
+                    { id: 'l1', type: 'list', settings: { items: "Apples\nBananas\nCarrots", style: 'bullet' } },
+                ]);
+            JS);
+            $b->pause(700);
+
+            // Drop the var chip over the SECOND <li> (Bananas). The caret
+            // visually indicated the second line; the inserted token must
+            // appear inside the "Bananas" line, not at the end of the
+            // entire items string.
+            $b->script(<<<'JS'
+                const chip = document.querySelector('.ps-pb-var-strip [data-var-name="userId"]');
+                const lis = document.querySelectorAll('.ps-pb-block-wrap[data-block-path="0"] li');
+                const target = lis[1]; // Bananas
+                const dt = new DataTransfer();
+                dt.setData('text/plain', '{{ userId }}');
+                dt.setData('application/x-page-studio-var', 'userId');
+                chip.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true, cancelable: true }));
+
+                const r = target.getBoundingClientRect();
+                const cx = r.left + 25, cy = r.top + r.height / 2;
+                const wrap = target.closest('.ps-pb-block-wrap');
+                wrap.dispatchEvent(new DragEvent('dragover', {
+                    dataTransfer: dt, bubbles: true, cancelable: true, clientX: cx, clientY: cy,
+                }));
+                wrap.dispatchEvent(new DragEvent('drop', {
+                    dataTransfer: dt, bubbles: true, cancelable: true, clientX: cx, clientY: cy,
+                }));
+            JS);
+            $b->pause(900);
+
+            $items = $b->script(<<<'JS'
+                return Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'))
+                    .get('blocks')[0].settings.items;
+            JS)[0];
+
+            $lines = explode("\n", (string) $items);
+            // Assert the token landed INSIDE the Bananas line at a caret
+            // position. Stripping the token from line[1] must restore
+            // "Bananas" exactly, proving the caret-to-source-offset mapping
+            // respects line boundaries (the bug was: text-node offset 3 in
+            // "Bananas" was being applied to source "Apples\nBananas..."
+            // and landing inside Apples).
+            $this->assertCount(3, $lines, 'items should still be 3 lines · got '.var_export($items, true));
+            $this->assertSame('Apples', $lines[0],
+                'first line (Apples) should stay clean · got '.var_export($items, true));
+            $this->assertStringContainsString('{{ userId }}', $lines[1],
+                'second line should carry the inserted token · got '.var_export($items, true));
+            $this->assertSame('Bananas', str_replace('{{ userId }}', '', $lines[1]),
+                'second line minus the token should be Bananas · got '.var_export($items, true));
+            $this->assertSame('Carrots', $lines[2],
+                'third line (Carrots) should stay clean · got '.var_export($items, true));
+        });
+    }
+
+    public function test_var_drop_on_code_block_lands_at_caret_position(): void
+    {
+        $this->browse(function (Browser $b) {
+            $this->fresh($b);
+            $b->script(<<<'JS'
+                Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id')).set('blocks', [
+                    { id: 'c1', type: 'code', settings: { code: "alpha\nbeta\ngamma", language: 'plain' } },
+                ]);
+            JS);
+            $b->pause(700);
+
+            // Drop right at the start of "beta" (offset 6 = after "alpha\n").
+            // The code block renders source verbatim inside one <code>
+            // text node so caret offset maps 1:1 to source offset.
+            $b->script(<<<'JS'
+                const chip = document.querySelector('.ps-pb-var-strip [data-var-name="userId"]');
+                const codeEl = document.querySelector('.ps-pb-block-wrap[data-block-path="0"] pre code');
+                const textNode = codeEl.firstChild;
+                const range = document.createRange();
+                range.setStart(textNode, 6);
+                range.setEnd(textNode, 6);
+                const r = range.getBoundingClientRect();
+
+                const dt = new DataTransfer();
+                dt.setData('text/plain', '{{ userId }}');
+                dt.setData('application/x-page-studio-var', 'userId');
+                chip.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true, cancelable: true }));
+
+                const wrap = codeEl.closest('.ps-pb-block-wrap');
+                wrap.dispatchEvent(new DragEvent('dragover', {
+                    dataTransfer: dt, bubbles: true, cancelable: true,
+                    clientX: r.left + 1, clientY: r.top + r.height / 2,
+                }));
+                wrap.dispatchEvent(new DragEvent('drop', {
+                    dataTransfer: dt, bubbles: true, cancelable: true,
+                    clientX: r.left + 1, clientY: r.top + r.height / 2,
+                }));
+            JS);
+            $b->pause(900);
+
+            $text = $b->script(<<<'JS'
+                return Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'))
+                    .get('blocks')[0].settings.code;
+            JS)[0];
+
+            // Expect: token sits at the start of line 2 ("beta"). Lines
+            // 1 and 3 stay clean.
+            $lines = explode("\n", (string) $text);
+            $this->assertCount(3, $lines, 'code source should still be 3 lines · got '.var_export($text, true));
+            $this->assertSame('alpha', $lines[0],
+                'line 1 (alpha) should stay clean · got '.var_export($text, true));
+            $this->assertStringContainsString('{{ userId }}', $lines[1],
+                'line 2 should carry the inserted token · got '.var_export($text, true));
+            $this->assertSame('beta', str_replace('{{ userId }}', '', $lines[1]),
+                'line 2 minus the token should be beta · got '.var_export($text, true));
+            $this->assertSame('gamma', $lines[2],
+                'line 3 (gamma) should stay clean · got '.var_export($text, true));
+        });
+    }
+
+    public function test_var_drop_on_paragraph_block_lands_at_caret_position(): void
+    {
+        $this->browse(function (Browser $b) {
+            $this->fresh($b);
+            $b->script(<<<'JS'
+                Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id')).set('blocks', [
+                    { id: 'p1', type: 'paragraph', settings: { text: 'Hello world', align: 'left' } },
+                ]);
+            JS);
+            $b->pause(700);
+
+            // Drop right after "Hello " (offset 6 in the single text node).
+            $b->script(<<<'JS'
+                const chip = document.querySelector('.ps-pb-var-strip [data-var-name="userId"]');
+                const p    = document.querySelector('.ps-pb-block-wrap[data-block-path="0"] p, .ps-pb-block-wrap[data-block-path="0"] .ps-pb-block-render');
+                const textNode = (function find(n) {
+                    if (n.nodeType === 3 && (n.textContent || '').trim().length) return n;
+                    for (const c of n.childNodes) { const f = find(c); if (f) return f; }
+                    return null;
+                })(p);
+                const range = document.createRange();
+                range.setStart(textNode, 6);
+                range.setEnd(textNode, 6);
+                const r = range.getBoundingClientRect();
+
+                const dt = new DataTransfer();
+                dt.setData('text/plain', '{{ userId }}');
+                dt.setData('application/x-page-studio-var', 'userId');
+                chip.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true, cancelable: true }));
+
+                const wrap = p.closest('.ps-pb-block-wrap');
+                wrap.dispatchEvent(new DragEvent('dragover', {
+                    dataTransfer: dt, bubbles: true, cancelable: true,
+                    clientX: r.left + 1, clientY: r.top + r.height / 2,
+                }));
+                wrap.dispatchEvent(new DragEvent('drop', {
+                    dataTransfer: dt, bubbles: true, cancelable: true,
+                    clientX: r.left + 1, clientY: r.top + r.height / 2,
+                }));
+            JS);
+            $b->pause(900);
+
+            $text = $b->script(<<<'JS'
+                return Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'))
+                    .get('blocks')[0].settings.text;
+            JS)[0];
+
+            $this->assertSame('Hello {{ userId }}world', (string) $text,
+                'paragraph text should have the token inserted between Hello and world · got '.var_export($text, true));
+        });
+    }
+
     public function test_visual_caret_while_dragging_var_over_block(): void
     {
         $this->browse(function (Browser $b) {
