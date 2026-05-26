@@ -230,6 +230,58 @@ class DragVarIntoBlockTest extends DuskTestCase
         });
     }
 
+    public function test_var_drop_past_end_of_list_item_lands_at_end_of_that_line(): void
+    {
+        $this->browse(function (Browser $b) {
+            $this->fresh($b);
+            $b->script(<<<'JS'
+                Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id')).set('blocks', [
+                    { id: 'l1', type: 'list', settings: { items: "Apples\nBananas\nCarrots", style: 'bullet' } },
+                ]);
+            JS);
+            $b->pause(700);
+
+            // Reproduce the real-world bug · the user hovers at the
+            // visual end of "Bananas" (past the last glyph but still
+            // inside the <li>'s wider box). In some browsers / line
+            // widths caretPositionFromPoint returns the <li> ELEMENT
+            // (not the inner text node) with offset = child-index. The
+            // mapCaretToSourceOffset code added that child-index to
+            // preLen, landing mid-word.
+            //
+            // We can't easily force caretPositionFromPoint to behave
+            // that way under headless Chrome, so instead we exercise
+            // the mapper directly with the offending shape · this is
+            // the public surface the dragover handler delegates to and
+            // it MUST handle both text-node and element offsets
+            // robustly.
+            $offset = $b->script(<<<'JS'
+                const wrap   = document.querySelector('.ps-pb-block-wrap[data-block-path="0"]');
+                const lis    = wrap.querySelectorAll('li');
+                const target = lis[1];               // the "Bananas" <li>
+
+                // Locate the page-builder Alpine root so we can reach
+                // its mapper without spelunking through Alpine internals.
+                const root   = document.querySelector('[x-data*="pageStudioPageBuilder"]')
+                            || document.querySelector('[data-component="page-studio.page-builder"]');
+                const scope  = Alpine.$data(root);
+
+                // Simulate the browser handing us the <li> element with
+                // an element-child-offset of 1 (== "past the first /
+                // only text node") rather than a (text-node, char)
+                // pair. This is the shape that produces the mid-word
+                // bug.
+                return scope.mapCaretToSourceOffset(wrap, target, 1);
+            JS)[0];
+
+            // "Apples\nBananas\nCarrots" · the END of the Bananas line
+            // is at source offset 14 (positions 0-5 = Apples, 6 = \n,
+            // 7-13 = Bananas, 14 = the trailing \n).
+            $this->assertSame(14, (int) $offset,
+                'mapCaretToSourceOffset must resolve "<li> element + element offset" to the END of that line (14), not preLen+child-index (8 = mid-word) · got '.var_export($offset, true));
+        });
+    }
+
     public function test_var_drop_on_code_block_lands_at_caret_position(): void
     {
         $this->browse(function (Browser $b) {
