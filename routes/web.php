@@ -19,6 +19,13 @@ Route::get('/pages/{route}/edit', function (RouteDefinition $route) {
     return view('page-edit', ['route' => $route]);
 })->name('pages.edit');
 
+// Mount the editor by pageId only · mirrors how studio.logged.cloud's
+// playground binds the page-builder when a visitor picks a demo page.
+// Used by Dusk to pin down the "graphs come up empty" bug.
+Route::get('/pages-by-id/{page}/edit', function (Page $page) {
+    return view('page-edit-by-id', ['page' => $page]);
+})->name('pages.edit-by-id');
+
 Route::get('/pages/{route}/preview', function (RouteDefinition $route) {
     $page = Page::where('route_id', $route->id)->first();
     if (! $page) abort(404, 'No page authored for this route yet.');
