@@ -90,6 +90,86 @@ class DragVarIntoBlockTest extends DuskTestCase
         });
     }
 
+    public function test_dropping_var_chip_onto_a_list_block_inserts_into_items(): void
+    {
+        $this->browse(function (Browser $b) {
+            $this->fresh($b);
+            // Replace with a list block at root.
+            $b->script(<<<'JS'
+                Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id')).set('blocks', [
+                    { id: 'l1', type: 'list', settings: { items: "Apples\nBananas\nCarrots", style: 'bullet' } },
+                ]);
+            JS);
+            $b->pause(600);
+
+            $b->script(<<<'JS'
+                const chip = document.querySelector('.ps-pb-var-strip [data-var-name="userId"]');
+                const block = document.querySelector('.ps-pb-block-wrap[data-block-path="0"]');
+                const dt = new DataTransfer();
+                dt.setData('text/plain', '{{ userId }}');
+                dt.setData('application/x-page-studio-var', 'userId');
+                chip.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true, cancelable: true }));
+                const r = block.getBoundingClientRect();
+                block.dispatchEvent(new DragEvent('drop', {
+                    dataTransfer: dt, bubbles: true, cancelable: true,
+                    clientX: r.left + 40, clientY: r.top + 25,
+                }));
+            JS);
+            $b->pause(900);
+
+            $items = $b->script(<<<'JS'
+                return Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'))
+                    .get('blocks')[0].settings.items;
+            JS)[0];
+
+            $this->assertStringContainsString('{{ userId }}', (string) $items,
+                'list block items should contain the var token after drop · got '.var_export($items, true));
+        });
+    }
+
+    public function test_dropping_var_chip_onto_block_nested_in_columns_left_slot(): void
+    {
+        $this->browse(function (Browser $b) {
+            $this->fresh($b);
+            $b->script(<<<'JS'
+                Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id')).set('blocks', [
+                    {
+                        id: 'c1', type: 'columns', settings: { ratio: '1-1' },
+                        children: {
+                            left:  [{ id: 'inner-list', type: 'list', settings: { items: "One\nTwo", style: 'bullet' } }],
+                            right: [],
+                        },
+                    },
+                ]);
+            JS);
+            $b->pause(700);
+
+            $b->script(<<<'JS'
+                const chip = document.querySelector('.ps-pb-var-strip [data-var-name="userId"]');
+                // The nested list block lives at path "0/left/0".
+                const inner = document.querySelector('.ps-pb-block-wrap[data-block-path="0/left/0"]');
+                const dt = new DataTransfer();
+                dt.setData('text/plain', '{{ userId }}');
+                dt.setData('application/x-page-studio-var', 'userId');
+                chip.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true, cancelable: true }));
+                const r = inner.getBoundingClientRect();
+                inner.dispatchEvent(new DragEvent('drop', {
+                    dataTransfer: dt, bubbles: true, cancelable: true,
+                    clientX: r.left + 20, clientY: r.top + 20,
+                }));
+            JS);
+            $b->pause(900);
+
+            $items = $b->script(<<<'JS'
+                return Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'))
+                    .get('blocks')[0].children.left[0].settings.items;
+            JS)[0];
+
+            $this->assertStringContainsString('{{ userId }}', (string) $items,
+                'nested list block (inside columns left slot) should accept var drop · got '.var_export($items, true));
+        });
+    }
+
     public function test_visual_caret_while_dragging_var_over_block(): void
     {
         $this->browse(function (Browser $b) {
