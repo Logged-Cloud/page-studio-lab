@@ -100,6 +100,43 @@ class UnifiedDeviceToggleTest extends DuskTestCase
         });
     }
 
+    public function test_edit_mode_canvas_collapses_columns_for_phone_device(): void
+    {
+        $this->browse(function (Browser $b) {
+            $this->fresh($b);
+            $b->script(<<<'JS'
+                const wire = Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'));
+                wire.set('blocks', [{
+                    id: 'b-cols3', type: 'columns-3', settings: {},
+                    children: {
+                        left:   [{ id: 'l', type: 'paragraph', settings: { text: 'L' } }],
+                        middle: [{ id: 'm', type: 'paragraph', settings: { text: 'M' } }],
+                        right:  [{ id: 'r', type: 'paragraph', settings: { text: 'R' } }],
+                    },
+                }]);
+            JS);
+            $b->pause(600);
+
+            // Click Phone in the topbar.
+            $b->script(<<<'JS'
+                const btn = Array.from(document.querySelectorAll('.ps-pb-device-toggle .ps-pb-device-btn'))
+                    .find(el => el.textContent.includes('Phone'));
+                if (btn) btn.click();
+            JS);
+            $b->pause(500);
+
+            $cols = $b->script(<<<'JS'
+                const frame = document.querySelector('.ps-pb-canvas-wrap--phone .ps-pb-layout--slots-3');
+                if (! frame) return null;
+                return window.getComputedStyle(frame).gridTemplateColumns;
+            JS)[0];
+
+            $this->assertNotNull($cols, 'edit-mode columns-3 layout frame should exist inside phone canvas-wrap');
+            $this->assertStringNotContainsString(' ', $cols,
+                'edit-mode columns-3 should collapse to one track when Phone is selected · got '.$cols);
+        });
+    }
+
     public function test_visual_topbar_device_buttons_in_preview(): void
     {
         $this->browse(function (Browser $b) {
