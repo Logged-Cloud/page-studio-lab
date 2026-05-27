@@ -51,6 +51,38 @@ class MobileFullScreenDrawerTest extends DuskTestCase
         });
     }
 
+    public function test_var_strip_is_hidden_while_drawer_is_full_screen_on_phone(): void
+    {
+        // Reproduces the "vars still in middle of screen" report ·
+        // the strip's `bottom: calc(var(--ps-pb-drawer-h) + 8px)`
+        // was leaning on a JS-set CSS variable that carried the
+        // desktop default (352px) even when the mobile media rule
+        // forced the drawer to 100dvh, so the strip floated up to
+        // mid-screen.
+        $this->browse(function (Browser $b) {
+            $b->resize(390, 844)
+                ->visit('/pages/3/edit')
+                ->waitFor('[data-component="page-studio.page-builder"]', 5);
+            $b->pause(700);
+
+            $b->script(<<<'JS'
+                const wire = Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'));
+                if (! wire.get('drawerOpen')) wire.call('toggleDrawer');
+            JS);
+            $b->pause(600);
+
+            $stripVisible = $b->script(<<<'JS'
+                const el = document.querySelector('.ps-pb-var-strip');
+                if (! el) return false;
+                const cs = getComputedStyle(el);
+                return cs.display !== 'none' && cs.visibility !== 'hidden';
+            JS)[0];
+
+            $this->assertFalse((bool) $stripVisible,
+                'the bottom variables strip must be hidden while the full-screen mobile drawer is open');
+        });
+    }
+
     public function test_drawer_stays_bottom_anchored_on_desktop(): void
     {
         $this->browse(function (Browser $b) {
