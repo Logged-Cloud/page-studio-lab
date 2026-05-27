@@ -15,6 +15,58 @@ use Tests\DuskTestCase;
  */
 class VarStripBottomWhenDrawerClosedTest extends DuskTestCase
 {
+    public function test_grid_padding_bottom_is_modest_when_drawer_is_closed(): void
+    {
+        // Companion regression · same stale --ps-pb-drawer-h that
+        // floated the var-strip mid-screen also inflated the
+        // .ps-pb-grid's padding-bottom (which reserves drawer
+        // space). Result · the left rail + preview pane couldn't
+        // grow to fill the viewport even though the drawer was
+        // closed.
+        $route = \LoggedCloud\PageStudio\Models\RouteDefinition::firstOrCreate(
+            ['name' => 'dusk.grid-padding-floor'],
+            ['method' => 'GET', 'path_template' => '/dusk-grid-padding-floor'],
+        );
+        \LoggedCloud\PageStudio\Models\Page::firstOrCreate(
+            ['route_id' => $route->id],
+            ['blocks' => [], 'status' => 'draft'],
+        );
+
+        $this->browse(function (Browser $b) use ($route) {
+            $b->resize(1440, 900)
+                ->visit('/pages/'.$route->id.'/edit')
+                ->waitFor('[data-component="page-studio.page-builder"]', 5);
+            $b->pause(700);
+
+            // Poison the CSS variable + close the drawer.
+            $b->script(<<<'JS'
+                document.documentElement.style.setProperty('--ps-pb-drawer-h', '480px');
+                const wire = Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'));
+                if (wire.get('drawerOpen')) wire.call('toggleDrawer');
+            JS);
+            $b->pause(500);
+
+            $diag = $b->script(<<<'JS'
+                const grid = document.querySelector('.ps-pb-grid');
+                if (! grid) return null;
+                return {
+                    paddingBottom: parseFloat(getComputedStyle(grid).paddingBottom),
+                    drawerOpen: Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id')).get('drawerOpen'),
+                };
+            JS)[0];
+
+            $this->assertNotNull($diag);
+            $this->assertFalse((bool) $diag['drawerOpen']);
+            // 3.25rem ≈ 52px · allow a bit of slack but should NOT
+            // be ~530 (the stale-drawer-h case).
+            $this->assertLessThan(80, (int) $diag['paddingBottom'],
+                'grid padding-bottom must shrink when drawer is closed regardless of stale --ps-pb-drawer-h · got '.json_encode($diag));
+        });
+
+        \LoggedCloud\PageStudio\Models\Page::where('route_id', $route->id)->delete();
+        \LoggedCloud\PageStudio\Models\RouteDefinition::where('id', $route->id)->delete();
+    }
+
     public function test_var_strip_sits_at_the_viewport_floor_when_drawer_is_closed(): void
     {
         $route = \LoggedCloud\PageStudio\Models\RouteDefinition::firstOrCreate(
