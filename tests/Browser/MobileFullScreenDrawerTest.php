@@ -51,14 +51,15 @@ class MobileFullScreenDrawerTest extends DuskTestCase
         });
     }
 
-    public function test_var_strip_is_hidden_while_drawer_is_full_screen_on_phone(): void
+    public function test_var_strip_pinned_to_bottom_while_drawer_is_full_screen_on_phone(): void
     {
-        // Reproduces the "vars still in middle of screen" report ·
-        // the strip's `bottom: calc(var(--ps-pb-drawer-h) + 8px)`
+        // The strip's `bottom: calc(var(--ps-pb-drawer-h) + 8px)`
         // was leaning on a JS-set CSS variable that carried the
         // desktop default (352px) even when the mobile media rule
         // forced the drawer to 100dvh, so the strip floated up to
-        // mid-screen.
+        // mid-screen · cue the "vars still in the middle" report.
+        // Fix · pin the strip to bottom: 0 with z-index above the
+        // drawer so it stays at the floor and remains usable.
         $this->browse(function (Browser $b) {
             $b->resize(390, 844)
                 ->visit('/pages/3/edit')
@@ -71,15 +72,26 @@ class MobileFullScreenDrawerTest extends DuskTestCase
             JS);
             $b->pause(600);
 
-            $stripVisible = $b->script(<<<'JS'
+            $shape = $b->script(<<<'JS'
                 const el = document.querySelector('.ps-pb-var-strip');
-                if (! el) return false;
+                if (! el) return null;
                 const cs = getComputedStyle(el);
-                return cs.display !== 'none' && cs.visibility !== 'hidden';
+                const r = el.getBoundingClientRect();
+                return {
+                    display: cs.display,
+                    zIndex:  parseInt(cs.zIndex || '0', 10),
+                    bottom:  Math.round(window.innerHeight - r.bottom),
+                    top:     Math.round(r.top),
+                };
             JS)[0];
 
-            $this->assertFalse((bool) $stripVisible,
-                'the bottom variables strip must be hidden while the full-screen mobile drawer is open');
+            $this->assertNotNull($shape, 'var-strip must be present');
+            $this->assertNotSame('none', $shape['display'],
+                'var-strip must remain visible while the full-screen drawer is open · got '.json_encode($shape));
+            $this->assertLessThan(4, abs((int) $shape['bottom']),
+                'var-strip must sit at the bottom of the viewport (bottom ~ 0) · got '.json_encode($shape));
+            $this->assertGreaterThanOrEqual(75, (int) $shape['zIndex'],
+                'var-strip z-index must clear the drawer (70) so it floats on top · got '.json_encode($shape));
         });
     }
 
