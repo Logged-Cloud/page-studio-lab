@@ -16,6 +16,89 @@ use Tests\DuskTestCase;
  */
 class MobileCanvasPanTest extends DuskTestCase
 {
+    public function test_shift_plus_left_drag_pans_the_canvas_on_desktop(): void
+    {
+        $route = \LoggedCloud\PageStudio\Models\RouteDefinition::firstOrCreate(
+            ['name' => 'dusk.shift-pan'],
+            ['method' => 'GET', 'path_template' => '/dusk-shift-pan'],
+        );
+        \LoggedCloud\PageStudio\Models\Page::firstOrCreate(
+            ['route_id' => $route->id],
+            ['blocks' => [], 'status' => 'draft'],
+        );
+        \LoggedCloud\PageStudio\Models\NodeGraph::updateOrCreate(
+            ['route_id' => $route->id],
+            [
+                'nodes' => [
+                    ['id' => 'n1', 'type' => 'source.constant', 'settings' => ['value' => 'pan'], 'position' => ['x' => 400, 'y' => 200]],
+                ],
+                'edges' => [],
+            ],
+        );
+
+        $this->browse(function (Browser $b) use ($route) {
+            $b->resize(1440, 900)
+                ->visit('/pages/'.$route->id.'/edit')
+                ->waitFor('[data-component="page-studio.page-builder"]', 5);
+            $b->pause(700);
+            $b->script(<<<'JS'
+                const wire = Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'));
+                if (! wire.get('drawerOpen')) wire.call('toggleDrawer');
+            JS);
+            $b->pause(700);
+
+            $pre = $b->script(<<<'JS'
+                const root = document.querySelector('.ps-ne-canvas-wrap');
+                const scope = Alpine.$data(root);
+                return { x: scope.pan.x, y: scope.pan.y };
+            JS)[0];
+
+            // Mouse drag with shiftKey · should pan the stage just
+            // like the existing Alt+left and middle-mouse triggers.
+            $b->script(<<<'JS'
+                const root = document.querySelector('.ps-ne-canvas-wrap');
+                const r = root.getBoundingClientRect();
+                const x0 = Math.round(r.left + r.width / 2);
+                const y0 = Math.round(r.top  + r.height / 2);
+                const fire = (type, dx, dy) => {
+                    const evt = new PointerEvent(type, {
+                        pointerType: 'mouse',
+                        button: 0,
+                        clientX: x0 + dx,
+                        clientY: y0 + dy,
+                        shiftKey: true,
+                        bubbles: true,
+                        cancelable: true,
+                    });
+                    root.dispatchEvent(evt);
+                    window.dispatchEvent(evt);
+                };
+                fire('pointerdown',  0,  0);
+                fire('pointermove', 50, 25);
+                fire('pointermove', 100, 50);
+                fire('pointerup',  100, 50);
+            JS);
+            $b->pause(400);
+
+            $post = $b->script(<<<'JS'
+                const root = document.querySelector('.ps-ne-canvas-wrap');
+                const scope = Alpine.$data(root);
+                return { x: scope.pan.x, y: scope.pan.y, marqueeActive: scope.marquee?.active === true };
+            JS)[0];
+
+            $this->assertGreaterThan(50, (int) $post['x'] - (int) $pre['x'],
+                'Shift+left-drag should pan x by the drag delta · got pre='.json_encode($pre).' post='.json_encode($post));
+            $this->assertGreaterThan(20, (int) $post['y'] - (int) $pre['y'],
+                'Shift+left-drag should pan y by the drag delta · got pre='.json_encode($pre).' post='.json_encode($post));
+            $this->assertFalse((bool) ($post['marqueeActive'] ?? false),
+                'Shift+left-drag must pan, not leave a marquee active');
+        });
+
+        \LoggedCloud\PageStudio\Models\NodeGraph::where('route_id', $route->id)->delete();
+        \LoggedCloud\PageStudio\Models\Page::where('route_id', $route->id)->delete();
+        \LoggedCloud\PageStudio\Models\RouteDefinition::where('id', $route->id)->delete();
+    }
+
     public function test_single_finger_touch_drag_pans_the_canvas(): void
     {
         // Seed a route + open the editor at phone width.
