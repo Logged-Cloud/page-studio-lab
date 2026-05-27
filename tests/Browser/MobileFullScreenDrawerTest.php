@@ -95,8 +95,11 @@ class MobileFullScreenDrawerTest extends DuskTestCase
         });
     }
 
-    public function test_drawer_stays_bottom_anchored_on_desktop(): void
+    public function test_drawer_is_full_screen_on_desktop_too(): void
     {
+        // Updated expectation · the drawer used to be a bottom sheet
+        // on desktop but now goes full-screen at every width so the
+        // whole viewport becomes the node-graph surface.
         $this->browse(function (Browser $b) {
             $b->resize(1440, 900)
                 ->visit('/pages/3/edit')
@@ -116,19 +119,19 @@ class MobileFullScreenDrawerTest extends DuskTestCase
                 return {
                     top:    Math.round(r.top),
                     height: Math.round(r.height),
+                    width:  Math.round(r.width),
                     vh:     window.innerHeight,
+                    vw:     window.innerWidth,
                 };
             JS)[0];
 
             $this->assertNotNull($shape);
-            // Desktop · drawer is much smaller than the viewport (the
-            // canvas sits behind it). Anything under ~70% of the
-            // viewport counts as "not full screen".
-            $this->assertLessThan(
-                (int) ($shape['vh'] * 0.7),
-                (int) $shape['height'],
-                'on desktop the drawer must NOT cover the viewport · got '.json_encode($shape),
-            );
+            $this->assertLessThan(4, abs((int) $shape['top']),
+                'drawer top should sit at the viewport top on desktop too · got '.json_encode($shape));
+            $this->assertLessThan(8, abs((int) $shape['vh'] - (int) $shape['height']),
+                'drawer height should match viewport on desktop · got '.json_encode($shape));
+            $this->assertLessThan(8, abs((int) $shape['vw'] - (int) $shape['width']),
+                'drawer width should match viewport on desktop · got '.json_encode($shape));
         });
     }
 }
