@@ -62,9 +62,9 @@ class StudioPlaygroundMobileTest extends DuskTestCase
             ['name' => 'ipad-mini',     'w' => 768,  'h' => 1024],
             ['name' => 'ipad-pro',      'w' => 1024, 'h' => 1366],
         ] as $vp) {
-            $this->browse(function (Browser $b) use ($vp, $page) {
+            $this->browse(function (Browser $b) use ($vp) {
                 $b->resize($vp['w'], $vp['h'])
-                    ->visit('/pages-by-id/'.$page->id.'/edit')
+                    ->visit('http://studio-logged-nginx/playground?page=82')
                     ->waitFor('[data-component="page-studio.page-builder"]', 8);
                 $b->pause(900);
                 $b->script(<<<'JS'
@@ -151,8 +151,11 @@ class StudioPlaygroundMobileTest extends DuskTestCase
                 (int) $diag['drawer']['width'],
                 'drawer should cover ~full viewport width · got '.json_encode($diag),
             );
-            $this->assertSame('none', $diag['varStrip']['display'] ?? 'block',
-                'var strip should be display:none when drawer is open · got '.json_encode($diag));
+            // Strip should be visible at the floor of the viewport ·
+            // bottom edge near the viewport height.
+            $stripBottom = (int) ($diag['varStrip']['top'] ?? 0) + (int) ($diag['varStrip']['height'] ?? 0);
+            $this->assertLessThan(8, abs($stripBottom - (int) $diag['vp']['h']),
+                'var strip should sit at the bottom of the viewport · got '.json_encode($diag));
         });
     }
 }
