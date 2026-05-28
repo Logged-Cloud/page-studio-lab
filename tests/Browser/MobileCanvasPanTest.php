@@ -16,6 +16,114 @@ use Tests\DuskTestCase;
  */
 class MobileCanvasPanTest extends DuskTestCase
 {
+    public function test_canvas_wrap_disables_browser_touch_gestures(): void
+    {
+        // Regression · on a real touchscreen, Chrome's gesture
+        // detection took over after ~5px of finger movement and
+        // cancelled our pointer-event-driven pan. The synthetic
+        // PointerEvents used in the prior test bypass that, which
+        // is why it passed even though the real device didn't pan.
+        // Assert the CSS that disables the browser interpretation
+        // is on the canvas-wrap.
+        $route = \LoggedCloud\PageStudio\Models\RouteDefinition::firstOrCreate(
+            ['name' => 'dusk.canvas-touch-action'],
+            ['method' => 'GET', 'path_template' => '/dusk-canvas-touch-action'],
+        );
+        \LoggedCloud\PageStudio\Models\Page::firstOrCreate(
+            ['route_id' => $route->id],
+            ['blocks' => [], 'status' => 'draft'],
+        );
+
+        $this->browse(function (Browser $b) use ($route) {
+            $b->resize(390, 844)
+                ->visit('/pages/'.$route->id.'/edit')
+                ->waitFor('[data-component="page-studio.page-builder"]', 5);
+            $b->pause(700);
+            $b->script(<<<'JS'
+                const wire = Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'));
+                if (! wire.get('drawerOpen')) wire.call('toggleDrawer');
+            JS);
+            $b->pause(700);
+
+            $touchAction = $b->script(<<<'JS'
+                const root = document.querySelector('.ps-ne-canvas-wrap');
+                if (! root) return null;
+                return getComputedStyle(root).touchAction;
+            JS)[0];
+
+            $this->assertNotNull($touchAction, '.ps-ne-canvas-wrap must be in the DOM');
+            $this->assertSame('none', $touchAction,
+                'canvas-wrap must set touch-action: none so the browser does not hijack touch drags as scroll · got '.var_export($touchAction, true));
+        });
+
+        \LoggedCloud\PageStudio\Models\Page::where('route_id', $route->id)->delete();
+        \LoggedCloud\PageStudio\Models\RouteDefinition::where('id', $route->id)->delete();
+    }
+
+    public function test_canvas_pointer_capture_keeps_the_pan_alive_past_short_drags(): void
+    {
+        // Reproduces "drag only moves a few pixels then stops" on
+        // mobile · the panDrag handler should call setPointerCapture
+        // on the canvas-wrap so the browser keeps routing pointermove
+        // to the same element even after the gesture detector wants
+        // to reinterpret the touch.
+        $route = \LoggedCloud\PageStudio\Models\RouteDefinition::firstOrCreate(
+            ['name' => 'dusk.long-touch-pan'],
+            ['method' => 'GET', 'path_template' => '/dusk-long-touch-pan'],
+        );
+        \LoggedCloud\PageStudio\Models\Page::firstOrCreate(
+            ['route_id' => $route->id],
+            ['blocks' => [], 'status' => 'draft'],
+        );
+
+        $this->browse(function (Browser $b) use ($route) {
+            $b->resize(390, 844)
+                ->visit('/pages/'.$route->id.'/edit')
+                ->waitFor('[data-component="page-studio.page-builder"]', 5);
+            $b->pause(700);
+            $b->script(<<<'JS'
+                const wire = Livewire.find(document.querySelector('[wire\\:id]').getAttribute('wire:id'));
+                if (! wire.get('drawerOpen')) wire.call('toggleDrawer');
+            JS);
+            $b->pause(700);
+
+            // Spy on setPointerCapture to confirm the handler claims
+            // the gesture · this is the real fix beyond touch-action.
+            $captured = $b->script(<<<'JS'
+                window.__psCaptured = false;
+                const orig = HTMLElement.prototype.setPointerCapture;
+                HTMLElement.prototype.setPointerCapture = function (id) {
+                    window.__psCaptured = true;
+                    return orig.call(this, id);
+                };
+
+                const root = document.querySelector('.ps-ne-canvas-wrap');
+                const r = root.getBoundingClientRect();
+                const x0 = Math.round(r.left + r.width / 2);
+                const y0 = Math.round(r.top  + r.height / 2);
+
+                // Synthesize a pointerdown only · the capture should
+                // happen on down, BEFORE any move arrives.
+                const evt = new PointerEvent('pointerdown', {
+                    pointerType: 'touch', pointerId: 1, isPrimary: true,
+                    button: 0, clientX: x0, clientY: y0,
+                    bubbles: true, cancelable: true,
+                });
+                root.dispatchEvent(evt);
+
+                const result = window.__psCaptured;
+                HTMLElement.prototype.setPointerCapture = orig;
+                return result;
+            JS)[0];
+
+            $this->assertTrue((bool) $captured,
+                'canvas pan handler should call setPointerCapture on touch pointerdown · without it the browser can steal the gesture mid-drag');
+        });
+
+        \LoggedCloud\PageStudio\Models\Page::where('route_id', $route->id)->delete();
+        \LoggedCloud\PageStudio\Models\RouteDefinition::where('id', $route->id)->delete();
+    }
+
     public function test_shift_plus_left_drag_pans_the_canvas_on_desktop(): void
     {
         $route = \LoggedCloud\PageStudio\Models\RouteDefinition::firstOrCreate(
